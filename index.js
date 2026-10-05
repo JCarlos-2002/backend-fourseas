@@ -6,6 +6,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const app = express();
+const verificarToken = require('./middlewares/authMiddleware');
 app.use(cors());
 app.use(express.json()); 
 
@@ -76,6 +77,42 @@ app.post('/api/login', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Error en el servidor durante el login' });
+    }
+});
+
+// 3. GET: Ver todos los pedidos (Solo personal autenticado)
+app.get('/api/pedidos', verificarToken, async (req, res) => {
+    try {
+        // El middleware verificarToken ya validó la identidad
+        const result = await pool.query('SELECT * FROM pedidos ORDER BY id_pedido DESC');
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ error: 'Error al obtener los pedidos' });
+    }
+});
+
+// 4. POST: Crear un nuevo pedido desde Recepción
+app.post('/api/pedidos', verificarToken, async (req, res) => {
+    const { total_pago, id_cliente } = req.body;
+    
+    try {
+        // Extraemos el ID del recepcionista del Token decodificado
+        const id_usuario_recepcion = req.user.id; 
+        
+        // Consulta parametrizada para evitar Inyección SQL (OWASP A03)
+        const nuevoPedido = await pool.query(
+            'INSERT INTO pedidos (total_pago, estado_pedido, id_cliente, id_usuario_recepcion) VALUES ($1, $2, $3, $4) RETURNING *',
+            [total_pago, 'Pendiente', id_cliente, id_usuario_recepcion]
+        );
+        
+        res.status(201).json({
+            mensaje: 'Pedido registrado con éxito',
+            pedido: nuevoPedido.rows[0]
+        });
+    } catch (error) {
+        console.error(error.message);
+        res.status(500).json({ error: 'Error al registrar el pedido' });
     }
 });
 
